@@ -1,0 +1,19 @@
+{
+  "name": "aura",
+  "version": "1.0.0",
+  "description": "proyecto venta",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "DevOswaldo",
+  "license": "ISC",
+  "keywords": [],
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "mongodb": "^6.8.0",
+    "mongoose": "^8.5.2",
+    "mongoose-sequence": "^6.0.1"
+  }
+}
