@@ -4,6 +4,7 @@
   "description": "proyecto venta",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "mocha"
   },
   "author": "DevOswaldo",

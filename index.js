@@ -1,17 +1,26 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
-const app = express();
-const port = 3000;
-const { Schema } = mongoose;
-const AutoIncrement = require('mongoose-sequence')(mongoose);
 const cors = require('cors');
 
-app.use(bodyParser.json());
-app.use(cors());
+const app = express();
+const port = process.env.PORT || 3000;
+const corsOptions = {
+  origin: ['http://localhost:3001','http://localhost:3000', 'https://vercelaura.vercel.app','https://aura.vercel.app','https://auraweb.vercel.app'], // Agrega aquí los dominios permitidos
+  optionsSuccessStatus: 200
+};
 
-const uri = "mongodb+srv://oswaldobru01:Ob010796@aura.atgra.mongodb.net/?retryWrites=true&w=majority&appName=Aura";
-mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+app.use(bodyParser.json());
+app.use(cors(corsOptions));
+
+const uri = process.env.MONGODB_URI || "mongodb+srv://oswaldobru01:Ob010796@aura.atgra.mongodb.net/?retryWrites=true&w=majority&appName=Aura";
+mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('Conectado a MongoDB Atlas'))
+  .catch(err => console.error('Error al conectar a MongoDB Atlas:', err.message));
+
+// Schema and Model
+const { Schema } = mongoose;
+const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 const ItemSchema = new Schema({
   idTipoArticulo: {
@@ -50,6 +59,7 @@ const ItemSchema = new Schema({
 }, {
   versionKey: false 
 });
+
 ItemSchema.plugin(AutoIncrement, { inc_field: 'idTipoArticulo' });
 
 ItemSchema.pre('save', function(next) {
@@ -61,15 +71,14 @@ ItemSchema.pre('findOneAndUpdate', async function(next) {
   const update = this.getUpdate();
   if (update.$set && update.$set['items.$.costo']) {
     const docToUpdate = await this.model.findOne(this.getQuery());
-    // Recalcular el costoTotal
     docToUpdate.costoTotal = docToUpdate.items.reduce((sum, item) => sum + item.costo, 0);
     await docToUpdate.save();
   }
   next();
 });
 
-
 const Item = mongoose.model('Item', ItemSchema);
+
 app.get('/aura', async (req, res) => {
   try {
     const items = await Item.find();
@@ -78,10 +87,10 @@ app.get('/aura', async (req, res) => {
     res.status(500).json({ message: 'Error al obtener los items' });
   }
 });
+
 app.post('/aura', async (req, res) => {
   try {
     const existingItemCount = await Item.countDocuments({ nombreArticulo: req.body.nombreArticulo });
-
     if (existingItemCount > 0) {
       return res.status(400).json({ message: `No se puede duplicar el item con nombreArticulo: ${req.body.nombreArticulo}` });
     }
@@ -97,7 +106,6 @@ app.post('/aura', async (req, res) => {
 app.delete('/aura/eliminarArticulo/:tipoArticulo/:nombreArticulo', async (req, res) => {
   try {
     const { tipoArticulo, nombreArticulo } = req.params;
-
     const item = await Item.findOneAndDelete({ tipoArticulo, nombreArticulo });
 
     if (!item) {
@@ -113,7 +121,6 @@ app.delete('/aura/eliminarArticulo/:tipoArticulo/:nombreArticulo', async (req, r
 app.delete('/aura/eliminarItem/:tipoArticulo/:nombreArticulo/:material', async (req, res) => {
   try {
     const { tipoArticulo, nombreArticulo, material } = req.params;
-
     const item = await Item.findOne({ tipoArticulo, nombreArticulo });
 
     if (!item) {
@@ -127,7 +134,6 @@ app.delete('/aura/eliminarItem/:tipoArticulo/:nombreArticulo/:material', async (
     }
 
     item.items = updatedItems;
-
     await item.save();
 
     res.status(200).json({ message: 'Material eliminado', item });
@@ -136,32 +142,38 @@ app.delete('/aura/eliminarItem/:tipoArticulo/:nombreArticulo/:material', async (
   }
 });
 
-
-app.put('/aura/:tipoArticulo/:nombreArticulo/:material', async (req, res) => {
+app.put('/aura/:tipoArticulo/:nombreArticulo', async (req, res) => {
   try {
-    const { tipoArticulo, nombreArticulo, material } = req.params;
-    const { nuevoMaterial, cantidad, unidad, costo } = req.body;
+    const { tipoArticulo, nombreArticulo } = req.params;
+    const { items } = req.body;
 
-    const item = await Item.findOneAndUpdate(
-      { tipoArticulo, nombreArticulo, 'items.material': material },
-      {
-        $set: {
-          'items.$.material': nuevoMaterial || material,
-          'items.$.cantidad': cantidad,
-          'items.$.unidad': unidad,
-          'items.$.costo': costo
-        }
-      },
-      { new: true }
-    );
-
-    if (!item) {
-      return res.status(404).json({ message: 'Item no encontrado' });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Debes proporcionar un array de items con al menos un item.' });
     }
 
-    res.status(200).json({ message: 'Item actualizado', item });
+    let item = await Item.findOne({ tipoArticulo, nombreArticulo });
+
+    if (!item) {
+      return res.status(404).json({ message: 'Artículo no encontrado' });
+    }
+
+    for (let newItem of items) {
+      await Item.updateOne(
+        { tipoArticulo, nombreArticulo },
+        { $pull: { items: { material: newItem.material } } }
+      );
+
+      item.items.push(newItem);
+    }
+
+    item.costoTotal = item.items.reduce((sum, item) => sum + item.costo, 0);
+
+
+    await item.save();
+
+    res.status(200).json({ message: 'Items actualizados correctamente', item });
   } catch (error) {
-    res.status(500).json({ message: 'Error al actualizar el item', error: error.message });
+    res.status(500).json({ message: 'Error al actualizar los items', error: error.message });
   }
 });
 
